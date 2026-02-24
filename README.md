@@ -18,11 +18,59 @@ Gadget_Chain是一个交互式的Java反序列化漏洞Gadget Chain可视化工�
 
 ### 支持的Gadget Chain
 
+> **说明**: 本工具支持的Gadget Chain列表参考自 [ysoserial](https://github.com/frohoff/ysoserial) 项目收集的Payload清单。以下列表中的Gadget Chain名称与ysoserial项目中的Payload名称一一对应，方便安全研究人员对照使用。
+
+#### Commons Collections (7个)
+- CommonsCollections1
+- CommonsCollections2
+- CommonsCollections3
+- CommonsCollections4
+- CommonsCollections5
+- CommonsCollections6
+- CommonsCollections7
+
+#### Spring Framework (2个)
+- Spring1
+- Spring2
+
+#### Hibernate (2个)
+- Hibernate1
+- Hibernate2
+
+#### JBoss (3个)
+- JBossInterceptors1
+- JavassistWeld1
+
+#### Mozilla Rhino (2个)
+- MozillaRhino1
+- MozillaRhino2
+
+#### MyFaces (2个)
+- MyFaces1
+- MyFaces2
+
+#### 其他 (17个)
 - URLDNS
-- CommonsCollections1/2/3/5/6/7
-- Spring1/2
-- Hibernate1/2
-- 更多持续添加中...
+- AspectJWeaver
+- BeanShell1
+- C3P0
+- Click1
+- Clojure
+- CommonsBeanutils1
+- FileUpload1
+- Groovy1
+- JSON1
+- JRMPClient
+- JRMPListener
+- Jython1
+- Rome
+- Vaadin1
+- Wicket1
+
+#### JDK内置 (1个)
+- Jdk7u21
+
+**总计**: 34+ 个Gadget Chain
 
 ## 技术栈
 
@@ -106,7 +154,7 @@ gadget-chain-visualizer/
 
 ## 致谢
 
-本项目基于 [ysoserial](https://github.com/frohoff/ysoserial) 项目构建，感谢frohoff和所有ysoserial贡献者。
+本工具支持的Gadget Chain名称列表参考自 [ysoserial](https://github.com/frohoff/ysoserial) 项目收集的Payload清单。感谢frohoff和所有ysoserial贡献者为Java反序列化安全研究做出的贡献。
 
 ---
 
