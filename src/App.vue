@@ -64,7 +64,7 @@ function toggleCompareMode() {
         <PayloadSelector v-if="!isCompareMode" :model-value="selectedChain" @select="onChainSelect" />
 
         <a
-          href="https://github.com/gb223/Gadget_Chain"
+          href="https://github.com/gb233/Gadget_Chain"
           target="_blank"
           rel="noopener noreferrer"
           class="w-9 h-9 rounded-lg bg-[#1a1a2e] hover:bg-[#252536] border border-[#2d2d44] flex items-center justify-center transition-all"
