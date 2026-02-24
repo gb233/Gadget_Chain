@@ -37,3 +37,9 @@ __screenshots__/
 
 # Vite
 *.timestamp-*-*.mjs
+
+# Temporary files
+[0-9]
+[0-9][0-9]
+check-*.mjs
+research/
