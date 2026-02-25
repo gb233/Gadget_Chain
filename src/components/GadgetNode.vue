@@ -48,12 +48,44 @@ const shortClassName = computed(() => {
   return parts[parts.length - 1]
 })
 
+// 计算节点边框颜色
+const nodeBorderColor = computed(() => {
+  // 对比模式：优先使用 isCommon/isOnlyA/isOnlyB
+  if (props.data.isCommon !== undefined) {
+    if (props.data.isCommon) return '#00ff88' // 共用节点绿色
+    if (props.data.isOnlyB) return '#ff4d4d'  // B独有红色
+    if (props.data.isOnlyA) return '#00d4ff'  // A独有蓝色
+  }
+  // 普通模式：使用 type
+  return nodeColors[props.data.type].border
+})
+
+// 计算节点背景颜色
+const nodeBgColor = computed(() => {
+  if (props.data.isCommon !== undefined) {
+    if (props.data.isCommon) return 'rgba(0, 255, 136, 0.1)'
+    if (props.data.isOnlyB) return 'rgba(255, 77, 77, 0.1)'
+    if (props.data.isOnlyA) return 'rgba(0, 212, 255, 0.1)'
+  }
+  return nodeColors[props.data.type].bg
+})
+
+// 计算节点发光效果
+const nodeGlow = computed(() => {
+  if (!props.data.isActive) return 'none'
+  if (props.data.isCommon !== undefined) {
+    if (props.data.isCommon) return '0 0 20px rgba(0, 255, 136, 0.4)'
+    if (props.data.isOnlyB) return '0 0 20px rgba(255, 77, 77, 0.4)'
+    if (props.data.isOnlyA) return '0 0 20px rgba(0, 212, 255, 0.4)'
+  }
+  return nodeColors[props.data.type].glow
+})
+
 const containerStyle = computed(() => {
-  const style = nodeColors[props.data.type]
   return {
-    borderLeft: `3px solid ${style.border}`,
-    backgroundColor: props.data.isActive ? style.bg : '#1a1a2e',
-    boxShadow: props.data.isActive ? style.glow : 'none',
+    borderLeft: `3px solid ${nodeBorderColor.value}`,
+    backgroundColor: props.data.isActive ? nodeBgColor.value : '#1a1a2e',
+    boxShadow: nodeGlow.value,
     transform: props.data.isActive ? 'scale(1.02)' : 'scale(1)',
     transition: 'all 0.3s ease',
   }
@@ -94,7 +126,7 @@ function onMouseLeave() {
       <div class="flex items-center justify-between">
         <span
           class="text-[9px] font-bold px-1.5 py-0.5 rounded"
-          :style="{ color: nodeColors[data.type].border, backgroundColor: nodeColors[data.type].bg }"
+          :style="{ color: nodeBorderColor, backgroundColor: nodeBgColor }"
         >
           {{ typeLabels[data.type] }}
         </span>
@@ -111,7 +143,7 @@ function onMouseLeave() {
       <!-- Method Name -->
       <div
         class="font-mono font-semibold text-xs truncate"
-        :style="{ color: nodeColors[data.type].border }"
+        :style="{ color: nodeBorderColor }"
       >
         {{ data.methodName }}()
       </div>
@@ -136,13 +168,13 @@ function onMouseLeave() {
       <div
         v-if="showTooltip"
         class="absolute left-full top-0 ml-3 w-[320px] p-4 rounded-xl bg-[#1a1a2e] border border-[#2d2d44] shadow-2xl z-50 pointer-events-none"
-        :style="{ borderLeftColor: nodeColors[data.type].border, borderLeftWidth: '3px' }"
+        :style="{ borderLeftColor: nodeBorderColor, borderLeftWidth: '3px' }"
       >
         <!-- Type Badge -->
         <div class="flex items-center justify-between mb-3">
           <span
             class="text-[10px] font-bold px-2 py-1 rounded"
-            :style="{ color: nodeColors[data.type].border, backgroundColor: nodeColors[data.type].bg }"
+            :style="{ color: nodeBorderColor, backgroundColor: nodeBgColor }"
           >
             {{ typeLabels[data.type] }}
           </span>
@@ -162,7 +194,7 @@ function onMouseLeave() {
         <!-- Method Name -->
         <div class="mb-3">
           <div class="text-[10px] text-gray-500 uppercase tracking-wider mb-1">方法</div>
-          <div class="text-base text-white font-mono" :style="{ color: nodeColors[data.type].border }">
+          <div class="text-base text-white font-mono" :style="{ color: nodeBorderColor }">
             {{ data.methodName }}()
           </div>
         </div>
