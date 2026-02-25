@@ -5,7 +5,7 @@ export const c3p0: GadgetChain = {
     chainId: 'c3p0',
     name: 'C3P0',
     targetDependency: 'com.mchange:c3p0:0.9.5.2',
-    description: '利用 C3P0 数据库连接池的 JNDI 引用功能。通过 ReferenceableUtils 触发 JNDI 查询，导致远程代码执行。',
+    description: '利用 C3P0 数据库连接池的 JNDI 引用功能。通过 ReferenceIndirector 在反序列化时触发 JNDI 查询，导致远程代码执行。',
     author: 'mbechler',
     complexity: 'Medium',
     cve: null,
@@ -42,10 +42,22 @@ export const c3p0: GadgetChain = {
     {
       id: 'node-3',
       type: 'gadget',
+      className: 'com.mchange.v2.c3p0.impl.PoolBackedDataSourceBase',
+      methodName: 'getConnection',
+      label: 'PoolBackedDataSourceBase.getConnection()',
+      description: '获取数据库连接，触发数据源初始化。',
+      codeSnippet: `public Connection getConnection() throws SQLException {
+    return getPoolManager().getResource();
+}`,
+      highlightLines: [2],
+    },
+    {
+      id: 'node-4',
+      type: 'gadget',
       className: 'com.mchange.v2.naming.ReferenceIndirector',
       methodName: 'getObject',
       label: 'ReferenceIndirector.getObject()',
-      description: '通过 JNDI 获取对象引用。',
+      description: '通过 JNDI 获取对象引用，触发 JNDI 查找。',
       codeSnippet: `public Object getObject() throws NamingException {
     Context initialContext = new InitialContext();
     return initialContext.lookup(name);
@@ -53,19 +65,19 @@ export const c3p0: GadgetChain = {
       highlightLines: [2, 3],
     },
     {
-      id: 'node-4',
+      id: 'node-5',
       type: 'gadget',
       className: 'javax.naming.InitialContext',
       methodName: 'lookup',
       label: 'InitialContext.lookup()',
-      description: 'JNDI 查找操作，可能导致远程类加载。',
+      description: 'JNDI 查找操作，解析名称并返回对象。',
       codeSnippet: `public Object lookup(String name) throws NamingException {
     return getURLOrDefaultInitCtx(name).lookup(name);
 }`,
-      highlightLines: [1],
+      highlightLines: [2],
     },
     {
-      id: 'node-5',
+      id: 'node-6',
       type: 'gadget',
       className: 'com.sun.jndi.rmi.registry.RegistryContext',
       methodName: 'lookup',
@@ -75,15 +87,28 @@ export const c3p0: GadgetChain = {
     // ... 查找远程对象 ...
     return lookup(name.get(0));
 }`,
-      highlightLines: [2],
+      highlightLines: [3],
     },
     {
-      id: 'node-6',
+      id: 'node-7',
+      type: 'gadget',
+      className: 'com.sun.jndi.rmi.registry.RegistryContext',
+      methodName: 'decodeObject',
+      label: 'RegistryContext.decodeObject()',
+      description: '解码 RMI 远程对象引用，提取 Reference 信息。',
+      codeSnippet: `private Object decodeObject(Remote r, Name name) throws NamingException {
+    // ... 解码远程引用 ...
+    return NamingManager.getObjectInstance(obj, name, this, env);
+}`,
+      highlightLines: [3],
+    },
+    {
+      id: 'node-8',
       type: 'sink',
       className: 'javax.naming.spi.NamingManager',
       methodName: 'getObjectInstance',
       label: 'NamingManager.getObjectInstance()',
-      description: '最终触发点：通过 JNDI 引用加载远程类，执行恶意代码。',
+      description: '最终触发点：通过 JNDI 引用加载远程工厂类，执行恶意代码。',
       codeSnippet: `public static Object getObjectInstance(Object refInfo,
     Name name, Context nameCtx, Hashtable<?,?> environment)
     throws Exception {
@@ -109,7 +134,7 @@ export const c3p0: GadgetChain = {
       target: 'node-3',
       invocationType: 'direct',
       label: '获取连接',
-      description: '数据源尝试获取数据库连接，触发 JNDI 查询',
+      description: '数据源尝试获取数据库连接',
       animated: false,
     },
     {
@@ -117,8 +142,8 @@ export const c3p0: GadgetChain = {
       source: 'node-3',
       target: 'node-4',
       invocationType: 'direct',
-      label: 'JNDI 查找',
-      description: 'ReferenceIndirector 调用 JNDI lookup',
+      label: '引用解析',
+      description: '通过 ReferenceIndirector 解析 JNDI 引用',
       animated: false,
     },
     {
@@ -126,17 +151,35 @@ export const c3p0: GadgetChain = {
       source: 'node-4',
       target: 'node-5',
       invocationType: 'direct',
-      label: 'RMI 解析',
-      description: 'InitialContext 解析 RMI 注册表地址',
+      label: 'JNDI 查找',
+      description: 'ReferenceIndirector 调用 JNDI lookup',
       animated: false,
     },
     {
       id: 'edge-5',
       source: 'node-5',
       target: 'node-6',
+      invocationType: 'direct',
+      label: 'RMI 解析',
+      description: 'InitialContext 解析 RMI 注册表地址',
+      animated: false,
+    },
+    {
+      id: 'edge-6',
+      source: 'node-6',
+      target: 'node-7',
+      invocationType: 'direct',
+      label: '对象解码',
+      description: 'RegistryContext 解码远程对象',
+      animated: false,
+    },
+    {
+      id: 'edge-7',
+      source: 'node-7',
+      target: 'node-8',
       invocationType: 'reflection',
       label: '远程加载',
-      description: 'RMI 返回的引用触发远程类加载',
+      description: '通过 NamingManager 加载远程类',
       animated: true,
     },
   ],

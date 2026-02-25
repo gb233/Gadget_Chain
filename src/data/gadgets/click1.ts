@@ -5,9 +5,9 @@ export const click1: GadgetChain = {
     chainId: 'click1',
     name: 'Click1',
     targetDependency: 'org.apache.click:click-nodeps:2.3.0',
-    description: '利用 Apache Click 框架的 Column 类，通过属性编辑器机制触发 JNDI 查找。Apache Click 是一个 Web 应用框架。',
+    description: '利用 Apache Click 框架的 Column 类，通过反序列化触发属性编辑器处理，进而通过 PropertyUtils 调用任意 getter 方法，最终导致 TemplatesImpl 类加载执行。',
     author: 'frohoff',
-    complexity: 'Medium',
+    complexity: 'High',
     cve: null,
   },
   nodes: [
@@ -31,7 +31,7 @@ export const click1: GadgetChain = {
       className: 'org.apache.click.control.Column',
       methodName: 'readObject',
       label: 'Column.readObject()',
-      description: 'Apache Click Column 类的反序列化方法。',
+      description: 'Apache Click Column 类的反序列化方法，恢复列配置。',
       codeSnippet: `private void readObject(ObjectInputStream in)
     throws IOException, ClassNotFoundException {
     in.defaultReadObject();
@@ -48,9 +48,9 @@ export const click1: GadgetChain = {
       description: '设置数据提供者，触发属性编辑器处理。',
       codeSnippet: `public void setDataProvider(DataProvider provider) {
     this.dataProvider = provider;
-    // 可能触发 JNDI 查找
+    // 触发属性处理
 }`,
-      highlightLines: [3],
+      highlightLines: [1, 3],
     },
     {
       id: 'node-4',
@@ -69,29 +69,78 @@ export const click1: GadgetChain = {
     {
       id: 'node-5',
       type: 'gadget',
-      className: 'javax.naming.InitialContext',
-      methodName: 'lookup',
-      label: 'InitialContext.lookup()',
-      description: 'JNDI 查找操作。',
-      codeSnippet: `public Object lookup(String name) throws NamingException {
-    return getURLOrDefaultInitCtx(name).lookup(name);
+      className: 'org.apache.click.util.PropertyUtils',
+      methodName: 'getValue',
+      label: 'PropertyUtils.getValue()',
+      description: '获取属性值，触发 getter 方法调用。',
+      codeSnippet: `public static Object getValue(Object target, String property) {
+    // ... 获取属性 ...
+    return method.invoke(target, EMPTY_ARGS);
 }`,
-      highlightLines: [1],
+      highlightLines: [3],
     },
     {
       id: 'node-6',
-      type: 'sink',
-      className: 'javax.naming.spi.NamingManager',
-      methodName: 'getObjectInstance',
-      label: 'NamingManager.getObjectInstance()',
-      description: '最终触发点：通过 JNDI 引用加载远程类。',
-      codeSnippet: `public static Object getObjectInstance(Object refInfo,
-    Name name, Context nameCtx, Hashtable<?,?> environment)
-    throws Exception {
-    // ... 加载工厂类 ...
-    return factory.getObjectInstance(refInfo, name, nameCtx, environment);
+      type: 'gadget',
+      className: 'com.sun.org.apache.xalan.internal.xsltc.trax.TemplatesImpl',
+      methodName: 'getOutputProperties',
+      label: 'TemplatesImpl.getOutputProperties()',
+      description: '获取输出属性，触发模板类加载。',
+      codeSnippet: `public Properties getOutputProperties() {
+    try {
+        return newTransformer().getOutputProperties();
+    } catch (TransformerConfigurationException e) {
+        return null;
+    }
 }`,
-      highlightLines: [4],
+      highlightLines: [3],
+    },
+    {
+      id: 'node-7',
+      type: 'gadget',
+      className: 'com.sun.org.apache.xalan.internal.xsltc.trax.TemplatesImpl',
+      methodName: 'newTransformer',
+      label: 'TemplatesImpl.newTransformer()',
+      description: '创建 Transformer 实例，触发 getTransletInstance()。',
+      codeSnippet: `public synchronized Transformer newTransformer()
+    throws TransformerConfigurationException {
+    TransformerImpl transformer = new TransformerImpl(
+        getTransletInstance(), ...
+    );
+    return transformer;
+}`,
+      highlightLines: [3],
+    },
+    {
+      id: 'node-8',
+      type: 'gadget',
+      className: 'com.sun.org.apache.xalan.internal.xsltc.trax.TemplatesImpl',
+      methodName: 'getTransletInstance',
+      label: 'TemplatesImpl.getTransletInstance()',
+      description: '获取 Translet 实例，如果未加载则加载类。',
+      codeSnippet: `private Translet getTransletInstance()
+    throws TransformerConfigurationException {
+    if (_name == null) return null;
+    if (_class == null) defineTransletClasses();
+    AbstractTranslet translet = (AbstractTranslet) _class[_transletIndex].newInstance();
+    return translet;
+}`,
+      highlightLines: [4, 5],
+    },
+    {
+      id: 'node-9',
+      type: 'sink',
+      className: 'java.lang.ClassLoader',
+      methodName: 'defineClass',
+      label: 'ClassLoader.defineClass()',
+      description: '最终触发点：加载恶意类字节码，执行静态代码块中的任意代码。',
+      codeSnippet: `protected final Class<?> defineClass(String name, byte[] b,
+    int off, int len, ProtectionDomain protectionDomain)
+    throws ClassFormatError {
+    // ... 类加载 ...
+    return defineClass1(name, b, off, len, protectionDomain, source);
+}`,
+      highlightLines: [1],
     },
   ],
   edges: [
@@ -126,18 +175,45 @@ export const click1: GadgetChain = {
       id: 'edge-4',
       source: 'node-4',
       target: 'node-5',
-      invocationType: 'reflection',
-      label: 'JNDI 触发',
-      description: '属性编辑器触发 JNDI lookup',
-      animated: true,
+      invocationType: 'direct',
+      label: '属性获取',
+      description: 'PropertyUtils 调用 getValue 获取属性',
+      animated: false,
     },
     {
       id: 'edge-5',
       source: 'node-5',
       target: 'node-6',
+      invocationType: 'reflection',
+      label: 'Getter 调用',
+      description: '反射调用 getOutputProperties',
+      animated: true,
+    },
+    {
+      id: 'edge-6',
+      source: 'node-6',
+      target: 'node-7',
       invocationType: 'direct',
-      label: '远程加载',
-      description: 'JNDI 查找触发远程类加载',
+      label: '创建 Transformer',
+      description: 'getOutputProperties 调用 newTransformer',
+      animated: false,
+    },
+    {
+      id: 'edge-7',
+      source: 'node-7',
+      target: 'node-8',
+      invocationType: 'direct',
+      label: '获取 Translet',
+      description: 'newTransformer 调用 getTransletInstance',
+      animated: false,
+    },
+    {
+      id: 'edge-8',
+      source: 'node-8',
+      target: 'node-9',
+      invocationType: 'reflection',
+      label: '类加载',
+      description: 'defineTransletClasses 调用 defineClass 加载恶意类',
       animated: true,
     },
   ],
