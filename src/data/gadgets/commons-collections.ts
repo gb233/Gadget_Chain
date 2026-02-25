@@ -43,7 +43,7 @@ export const commonsCollections2: GadgetChain = {
       id: 'node-3',
       type: 'gadget',
       className: 'java.util.PriorityQueue',
-      methodName: 'heapify / siftDown',
+      methodName: 'heapify',
       label: 'PriorityQueue.heapify()',
       description: '重建堆结构时会调用siftDown，进而使用比较器比较元素。',
       codeSnippet: `private void heapify() {
@@ -54,6 +54,46 @@ export const commonsCollections2: GadgetChain = {
     },
     {
       id: 'node-4',
+      type: 'gadget',
+      className: 'java.util.PriorityQueue',
+      methodName: 'siftDown',
+      label: 'PriorityQueue.siftDown()',
+      description: '下沉操作中需要使用比较器比较父节点和子节点。',
+      codeSnippet: `private void siftDown(int k, E x) {
+    if (comparator != null)
+        siftDownUsingComparator(k, x);
+    else
+        siftDownComparable(k, x);
+}`,
+      highlightLines: [2, 3],
+    },
+    {
+      id: 'node-5',
+      type: 'gadget',
+      className: 'java.util.PriorityQueue',
+      methodName: 'siftDownUsingComparator',
+      label: 'PriorityQueue.siftDownUsingComparator()',
+      description: '使用自定义比较器进行元素比较。',
+      codeSnippet: `private void siftDownUsingComparator(int k, E x) {
+    int half = size >>> 1;
+    while (k < half) {
+        int child = (k << 1) + 1;
+        Object c = queue[child];
+        int right = child + 1;
+        if (right < size &&
+            comparator.compare((E) c, (E) queue[right]) > 0)
+            c = queue[child = right];
+        if (comparator.compare(x, (E) c) <= 0)
+            break;
+        queue[k] = c;
+        k = child;
+    }
+    queue[k] = x;
+}`,
+      highlightLines: [9, 10],
+    },
+    {
+      id: 'node-6',
       type: 'gadget',
       className: 'org.apache.commons.collections4.comparators.TransformingComparator',
       methodName: 'compare',
@@ -67,7 +107,7 @@ export const commonsCollections2: GadgetChain = {
       highlightLines: [2, 3],
     },
     {
-      id: 'node-5',
+      id: 'node-7',
       type: 'gadget',
       className: 'org.apache.commons.collections4.functors.InvokerTransformer',
       methodName: 'transform',
@@ -88,7 +128,7 @@ export const commonsCollections2: GadgetChain = {
       highlightLines: [6],
     },
     {
-      id: 'node-6',
+      id: 'node-8',
       type: 'gadget',
       className: 'java.lang.reflect.Method',
       methodName: 'invoke',
@@ -104,7 +144,7 @@ public Object invoke(Object obj, Object... args)
       highlightLines: [1],
     },
     {
-      id: 'node-7',
+      id: 'node-9',
       type: 'sink',
       className: 'com.sun.org.apache.xalan.internal.xsltc.trax.TemplatesImpl',
       methodName: 'newTransformer',
@@ -120,7 +160,7 @@ public Object invoke(Object obj, Object... args)
       highlightLines: [3],
     },
     {
-      id: 'node-8',
+      id: 'node-10',
       type: 'sink',
       className: 'java.lang.Runtime',
       methodName: 'exec',
@@ -156,8 +196,8 @@ public Object invoke(Object obj, Object... args)
       source: 'node-3',
       target: 'node-4',
       invocationType: 'direct',
-      label: '比较器调用',
-      description: '排序过程中使用TransformingComparator.compare()比较元素',
+      label: '下沉操作',
+      description: 'heapify调用siftDown进行元素下沉',
       animated: false,
     },
     {
@@ -165,32 +205,50 @@ public Object invoke(Object obj, Object... args)
       source: 'node-4',
       target: 'node-5',
       invocationType: 'direct',
-      label: '转换器链',
-      description: 'TransformingComparator调用InvokerTransformer.transform()',
+      label: '使用比较器',
+      description: 'siftDown调用siftDownUsingComparator',
       animated: false,
     },
     {
       id: 'edge-5',
       source: 'node-5',
       target: 'node-6',
+      invocationType: 'direct',
+      label: '比较器调用',
+      description: '排序过程中使用TransformingComparator.compare()比较元素',
+      animated: false,
+    },
+    {
+      id: 'edge-6',
+      source: 'node-6',
+      target: 'node-7',
+      invocationType: 'direct',
+      label: '转换器链',
+      description: 'TransformingComparator调用InvokerTransformer.transform()',
+      animated: false,
+    },
+    {
+      id: 'edge-7',
+      source: 'node-7',
+      target: 'node-8',
       invocationType: 'reflection',
       label: '反射调用',
       description: 'InvokerTransformer通过反射调用方法',
       animated: true,
     },
     {
-      id: 'edge-6',
-      source: 'node-6',
-      target: 'node-7',
+      id: 'edge-8',
+      source: 'node-8',
+      target: 'node-9',
       invocationType: 'reflection',
       label: '触发加载',
       description: '反射调用TemplatesImpl.newTransformer()',
       animated: true,
     },
     {
-      id: 'edge-7',
-      source: 'node-7',
-      target: 'node-8',
+      id: 'edge-9',
+      source: 'node-9',
+      target: 'node-10',
       invocationType: 'direct',
       label: '代码执行',
       description: '恶意类加载后执行构造方法中的Runtime.exec()',
@@ -213,6 +271,20 @@ export const commonsCollections1: GadgetChain = {
     {
       id: 'node-1',
       type: 'source',
+      className: 'java.io.ObjectInputStream',
+      methodName: 'readObject',
+      label: 'ObjectInputStream.readObject()',
+      description: 'Java反序列化标准入口。读取序列化数据流并重建对象。',
+      codeSnippet: `public final Object readObject()
+    throws IOException, ClassNotFoundException {
+    // ... 反序列化流程 ...
+    return obj;
+}`,
+      highlightLines: [1],
+    },
+    {
+      id: 'node-2',
+      type: 'source',
       className: 'sun.reflect.annotation.AnnotationInvocationHandler',
       methodName: 'readObject',
       label: 'AnnotationInvocationHandler.readObject()',
@@ -230,8 +302,24 @@ export const commonsCollections1: GadgetChain = {
       highlightLines: [2],
     },
     {
-      id: 'node-2',
-      type: 'source',
+      id: 'node-3',
+      type: 'gadget',
+      className: 'java.util.Map',
+      methodName: 'entrySet',
+      label: 'Map(Proxy).entrySet()',
+      description: '动态代理对象的entrySet()方法调用。在反序列化后或被调用时触发代理的invoke方法。',
+      codeSnippet: `// 动态代理的Map对象
+Map mapProxy = (Map) Proxy.newProxyInstance(
+    Map.class.getClassLoader(),
+    new Class[] { Map.class },
+    annotationInvocationHandler
+);
+// 调用 entrySet() 触发 invoke`,
+      highlightLines: [5],
+    },
+    {
+      id: 'node-4',
+      type: 'gadget',
       className: 'sun.reflect.annotation.AnnotationInvocationHandler',
       methodName: 'invoke',
       label: 'AnnotationInvocationHandler.invoke()',
@@ -259,7 +347,7 @@ export const commonsCollections1: GadgetChain = {
       highlightLines: [17],
     },
     {
-      id: 'node-3',
+      id: 'node-5',
       type: 'gadget',
       className: 'org.apache.commons.collections.map.LazyMap',
       methodName: 'get',
@@ -277,7 +365,7 @@ export const commonsCollections1: GadgetChain = {
       highlightLines: [4],
     },
     {
-      id: 'node-4',
+      id: 'node-6',
       type: 'gadget',
       className: 'org.apache.commons.collections.functors.ChainedTransformer',
       methodName: 'transform',
@@ -292,35 +380,33 @@ export const commonsCollections1: GadgetChain = {
       highlightLines: [2, 3],
     },
     {
-      id: 'node-5',
+      id: 'node-7',
       type: 'gadget',
       className: 'org.apache.commons.collections.functors.ConstantTransformer',
       methodName: 'transform',
       label: 'ConstantTransformer.transform()',
-      description: '返回常量值，通常用于链的开始，提供Runtime.class作为初始输入。',
-      codeSnippet: `public ConstantTransformer(Object constantToReturn) {
-    iConstant = constantToReturn;
-}
-
-public Object transform(Object input) {
+      description: '返回常量值，用于链的开始，提供Runtime.class作为初始输入。',
+      codeSnippet: `public Object transform(Object input) {
     return iConstant;
 }`,
-      highlightLines: [5],
+      highlightLines: [2],
     },
     {
-      id: 'node-6',
+      id: 'node-8',
       type: 'gadget',
       className: 'org.apache.commons.collections.functors.InvokerTransformer',
       methodName: 'transform',
-      label: 'InvokerTransformer.transform()',
-      description: '通过反射调用方法。链中多个InvokerTransformer分别调用getMethod、invoke。',
+      label: 'InvokerTransformer[0].transform() → getMethod',
+      description: '第一个InvokerTransformer，通过反射调用Class.getMethod("getRuntime")获取Method对象。',
       codeSnippet: `public Object transform(Object input) {
     if (input == null) {
         return null;
     }
     try {
         Class cls = input.getClass();
-        Method method = cls.getMethod(iMethodName);
+        // iMethodName = "getMethod"
+        // iArgs = "getRuntime"
+        Method method = cls.getMethod(iMethodName, iParamTypes);
         return method.invoke(input, iArgs);
     } catch (...) {
         throw new FunctorException(...);
@@ -329,12 +415,86 @@ public Object transform(Object input) {
       highlightLines: [7],
     },
     {
-      id: 'node-7',
+      id: 'node-9',
+      type: 'gadget',
+      className: 'java.lang.Class',
+      methodName: 'getMethod',
+      label: 'Class.getMethod()',
+      description: '获取Runtime类的getRuntime静态方法。',
+      codeSnippet: `public Method getMethod(String name, Class<?>... parameterTypes)
+    throws NoSuchMethodException, SecurityException {
+    return getMethod0(name, parameterTypes, true);
+}`,
+      highlightLines: [1],
+    },
+    {
+      id: 'node-10',
+      type: 'gadget',
+      className: 'org.apache.commons.collections.functors.InvokerTransformer',
+      methodName: 'transform',
+      label: 'InvokerTransformer[1].transform() → invoke',
+      description: '第二个InvokerTransformer，调用Method.invoke()执行getRuntime方法，返回Runtime实例。',
+      codeSnippet: `public Object transform(Object input) {
+    if (input == null) {
+        return null;
+    }
+    try {
+        Class cls = input.getClass();
+        // iMethodName = "invoke"
+        // input = Method对象 (getRuntime)
+        Method method = cls.getMethod(iMethodName, iParamTypes);
+        return method.invoke(input, iArgs);
+    } catch (...) {
+        throw new FunctorException(...);
+    }
+}`,
+      highlightLines: [7],
+    },
+    {
+      id: 'node-11',
+      type: 'gadget',
+      className: 'java.lang.reflect.Method',
+      methodName: 'invoke',
+      label: 'Method.invoke() → getRuntime',
+      description: '调用getRuntime()静态方法，返回Runtime实例。',
+      codeSnippet: `public Object invoke(Object obj, Object... args)
+    throws IllegalAccessException, IllegalArgumentException,
+           InvocationTargetException {
+    // ... 反射调用getRuntime() ...
+    return Runtime.getRuntime();
+}`,
+      highlightLines: [1],
+    },
+    {
+      id: 'node-12',
+      type: 'gadget',
+      className: 'org.apache.commons.collections.functors.InvokerTransformer',
+      methodName: 'transform',
+      label: 'InvokerTransformer[2].transform() → exec',
+      description: '第三个InvokerTransformer，调用Runtime.exec()执行任意命令。',
+      codeSnippet: `public Object transform(Object input) {
+    if (input == null) {
+        return null;
+    }
+    try {
+        Class cls = input.getClass();
+        // iMethodName = "exec"
+        // input = Runtime实例
+        Method method = cls.getMethod(iMethodName, iParamTypes);
+        return method.invoke(input, iArgs);
+    } catch (...) {
+        throw new FunctorException(...);
+    }
+}`,
+      highlightLines: [7],
+    },
+    {
+      id: 'node-13',
       type: 'sink',
       className: 'java.lang.Runtime',
       methodName: 'exec',
       label: 'Runtime.exec()',
-      description: '最终命令执行点。链的最后一步执行任意系统命令。',
+      description: '最终命令执行点。执行任意系统命令。',
       codeSnippet: `public Process exec(String command) throws IOException {
     return exec(command, null, null);
 }`,
@@ -346,36 +506,36 @@ public Object transform(Object input) {
       id: 'edge-1',
       source: 'node-1',
       target: 'node-2',
-      invocationType: 'proxy',
-      label: '动态代理',
-      description: '反序列化后代理对象的方法调用触发invoke',
-      animated: true,
+      invocationType: 'direct',
+      label: '反序列化触发',
+      description: 'ObjectInputStream反序列化AnnotationInvocationHandler对象',
+      animated: false,
     },
     {
       id: 'edge-2',
       source: 'node-2',
       target: 'node-3',
-      invocationType: 'direct',
-      label: 'Map操作',
-      description: 'AnnotationInvocationHandler调用LazyMap的get方法',
-      animated: false,
+      invocationType: 'proxy',
+      label: '代理恢复',
+      description: '反序列化后代理对象可用，方法调用触发invoke',
+      animated: true,
     },
     {
       id: 'edge-3',
       source: 'node-3',
       target: 'node-4',
-      invocationType: 'direct',
-      label: '工厂转换',
-      description: 'LazyMap通过ChainedTransformer创建value',
-      animated: false,
+      invocationType: 'proxy',
+      label: '动态代理',
+      description: 'Map.entrySet()调用触发AnnotationInvocationHandler.invoke()',
+      animated: true,
     },
     {
       id: 'edge-4',
       source: 'node-4',
       target: 'node-5',
       invocationType: 'direct',
-      label: '链式调用',
-      description: 'ChainedTransformer链的第一个transformer',
+      label: 'Map操作',
+      description: 'AnnotationInvocationHandler调用LazyMap的get方法',
       animated: false,
     },
     {
@@ -383,17 +543,71 @@ public Object transform(Object input) {
       source: 'node-5',
       target: 'node-6',
       invocationType: 'direct',
-      label: '链式调用',
-      description: 'ConstantTransformer输出作为InvokerTransformer输入',
+      label: '工厂转换',
+      description: 'LazyMap通过ChainedTransformer创建value',
       animated: false,
     },
     {
       id: 'edge-6',
       source: 'node-6',
       target: 'node-7',
+      invocationType: 'direct',
+      label: '链式调用-1',
+      description: 'ChainedTransformer链的第一个transformer: ConstantTransformer',
+      animated: false,
+    },
+    {
+      id: 'edge-7',
+      source: 'node-7',
+      target: 'node-8',
+      invocationType: 'direct',
+      label: '链式调用-2',
+      description: 'ConstantTransformer返回Runtime.class作为InvokerTransformer[0]输入',
+      animated: false,
+    },
+    {
+      id: 'edge-8',
+      source: 'node-8',
+      target: 'node-9',
       invocationType: 'reflection',
-      label: '反射执行',
-      description: 'InvokerTransformer通过反射调用Runtime.exec',
+      label: '反射获取方法',
+      description: 'InvokerTransformer[0]通过反射调用Class.getMethod()',
+      animated: true,
+    },
+    {
+      id: 'edge-9',
+      source: 'node-9',
+      target: 'node-10',
+      invocationType: 'direct',
+      label: '链式调用-3',
+      description: 'getMethod返回的Method对象作为InvokerTransformer[1]输入',
+      animated: false,
+    },
+    {
+      id: 'edge-10',
+      source: 'node-10',
+      target: 'node-11',
+      invocationType: 'reflection',
+      label: '反射调用方法',
+      description: 'InvokerTransformer[1]通过反射调用Method.invoke()执行getRuntime',
+      animated: true,
+    },
+    {
+      id: 'edge-11',
+      source: 'node-11',
+      target: 'node-12',
+      invocationType: 'direct',
+      label: '链式调用-4',
+      description: 'getRuntime返回Runtime实例作为InvokerTransformer[2]输入',
+      animated: false,
+    },
+    {
+      id: 'edge-12',
+      source: 'node-12',
+      target: 'node-13',
+      invocationType: 'reflection',
+      label: '反射执行命令',
+      description: 'InvokerTransformer[2]通过反射调用Runtime.exec()',
       animated: true,
     },
   ],
