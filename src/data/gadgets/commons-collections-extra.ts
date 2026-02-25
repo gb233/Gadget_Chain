@@ -1,12 +1,12 @@
 import type { GadgetChain } from './types'
 
-// CommonsCollections3 - 使用 InstantiateTransformer 和 TrAX
+// CommonsCollections3 - 使用 InstantiateTransformer + TrAXFilter + TemplatesImpl
 export const commonsCollections3: GadgetChain = {
   metadata: {
     chainId: 'commons-collections3',
     name: 'CommonsCollections3',
     targetDependency: 'commons-collections:commons-collections:3.1',
-    description: '使用 InstantiateTransformer 和 TrAX 模板。通过 ChainedTransformer 链触发 TemplatesImpl 类加载，利用 InstantiateTransformer 实例化恶意类。',
+    description: '使用 InstantiateTransformer 实例化 TrAXFilter，通过 TrAXFilter 构造器调用 TemplatesImpl.newTransformer() 触发恶意字节码加载。绕过对 InvokerTransformer 的黑名单检测。',
     author: 'frohoff',
     complexity: 'High',
     cve: 'CVE-2015-4852',
@@ -41,18 +41,37 @@ export const commonsCollections3: GadgetChain = {
     {
       id: 'node-3',
       type: 'gadget',
-      className: 'sun.reflect.annotation.AnnotationInvocationHandler',
-      methodName: 'invoke',
-      label: 'AnnotationInvocationHandler.invoke()',
-      description: '当代理对象的方法被调用时触发。',
-      codeSnippet: `public Object invoke(Object proxy, Method method, Object[] args) {
-    // ... 处理注解方法 ...
-    return memberValues.get(member);
-}`,
-      highlightLines: [3],
+      className: 'java.util.Map',
+      methodName: 'entrySet',
+      label: 'Map(Proxy).entrySet()',
+      description: '动态代理对象的entrySet()方法调用，触发代理的invoke方法。',
+      codeSnippet: `// 动态代理的Map对象
+Map mapProxy = (Map) Proxy.newProxyInstance(
+    Map.class.getClassLoader(),
+    new Class[] { Map.class },
+    annotationInvocationHandler
+);
+// 调用 entrySet() 触发 invoke`,
+      highlightLines: [5],
     },
     {
       id: 'node-4',
+      type: 'gadget',
+      className: 'sun.reflect.annotation.AnnotationInvocationHandler',
+      methodName: 'invoke',
+      label: 'AnnotationInvocationHandler.invoke()',
+      description: '当代理对象的方法被调用时触发，调用memberValues.get()。',
+      codeSnippet: `public Object invoke(Object proxy, Method method, Object[] args) {
+    String member = method.getName();
+    // ... 处理特殊方法 ...
+    // 关键：调用memberValues的方法
+    Object result = memberValues.get(member);
+    return result;
+}`,
+      highlightLines: [5],
+    },
+    {
+      id: 'node-5',
       type: 'gadget',
       className: 'org.apache.commons.collections.map.LazyMap',
       methodName: 'get',
@@ -66,10 +85,10 @@ export const commonsCollections3: GadgetChain = {
     }
     return map.get(key);
 }`,
-      highlightLines: [3, 4],
+      highlightLines: [3],
     },
     {
-      id: 'node-5',
+      id: 'node-6',
       type: 'gadget',
       className: 'org.apache.commons.collections.functors.ChainedTransformer',
       methodName: 'transform',
@@ -84,29 +103,103 @@ export const commonsCollections3: GadgetChain = {
       highlightLines: [2, 3],
     },
     {
-      id: 'node-6',
+      id: 'node-7',
+      type: 'gadget',
+      className: 'org.apache.commons.collections.functors.ConstantTransformer',
+      methodName: 'transform',
+      label: 'ConstantTransformer.transform()',
+      description: '返回常量TrAXFilter.class，作为InstantiateTransformer的输入。',
+      codeSnippet: `public Object transform(Object input) {
+    return iConstant; // TrAXFilter.class
+}`,
+      highlightLines: [2],
+    },
+    {
+      id: 'node-8',
       type: 'gadget',
       className: 'org.apache.commons.collections.functors.InstantiateTransformer',
       methodName: 'transform',
       label: 'InstantiateTransformer.transform()',
-      description: '实例化指定类，传入构造参数。',
+      description: '实例化TrAXFilter，传入恶意TemplatesImpl作为构造参数。',
       codeSnippet: `public Object transform(Object input) {
-    Class cls = (Class) input;
+    Class cls = (Class) input; // TrAXFilter.class
+    // iParamTypes = { Templates.class }
+    // iArgs = { 恶意TemplatesImpl }
     return cls.getConstructor(iParamTypes).newInstance(iArgs);
+}`,
+      highlightLines: [5],
+    },
+    {
+      id: 'node-9',
+      type: 'gadget',
+      className: 'com.sun.org.apache.xalan.internal.xsltc.trax.TrAXFilter',
+      methodName: '<init>',
+      label: 'TrAXFilter Constructor',
+      description: 'TrAXFilter构造器中调用templates.newTransformer()。',
+      codeSnippet: `public TrAXFilter(Templates templates) {
+    this._templates = templates;
+    this._transformer = this._templates.newTransformer();
 }`,
       highlightLines: [3],
     },
     {
-      id: 'node-7',
-      type: 'sink',
-      className: 'java.lang.Runtime',
-      methodName: 'exec',
-      label: 'Runtime.exec()',
-      description: '最终命令执行点。',
-      codeSnippet: `public Process exec(String command) throws IOException {
-    return exec(command, null, null);
+      id: 'node-10',
+      type: 'gadget',
+      className: 'com.sun.org.apache.xalan.internal.xsltc.trax.TemplatesImpl',
+      methodName: 'newTransformer',
+      label: 'TemplatesImpl.newTransformer()',
+      description: '触发恶意字节码的加载和实例化。',
+      codeSnippet: `public synchronized Transformer newTransformer()
+    throws TransformerConfigurationException {
+    TransformerImpl transformer = new TransformerImpl(
+        getTransletInstance(), ...
+    );
+    return transformer;
 }`,
-      highlightLines: [1],
+      highlightLines: [3],
+    },
+    {
+      id: 'node-11',
+      type: 'gadget',
+      className: 'com.sun.org.apache.xalan.internal.xsltc.trax.TemplatesImpl',
+      methodName: 'getTransletInstance',
+      label: 'TemplatesImpl.getTransletInstance()',
+      description: '获取Translet实例，如果未加载则调用defineTransletClasses()。',
+      codeSnippet: `private Translet getTransletInstance() {
+    if (_class == null) {
+        defineTransletClasses();
+    }
+    // 实例化恶意类
+    return (Translet) _class[_transletIndex].newInstance();
+}`,
+      highlightLines: [3, 6],
+    },
+    {
+      id: 'node-12',
+      type: 'gadget',
+      className: 'com.sun.org.apache.xalan.internal.xsltc.trax.TemplatesImpl',
+      methodName: 'defineTransletClasses',
+      label: 'TemplatesImpl.defineTransletClasses()',
+      description: '定义Translet类，通过TransletClassLoader加载字节码。',
+      codeSnippet: `private void defineTransletClasses() {
+    // ... 创建TransletClassLoader ...
+    for (int i = 0; i < _bytecodes.length; i++) {
+        _class[i] = loader.defineClass(_bytecodes[i]);
+    }
+}`,
+      highlightLines: [4],
+    },
+    {
+      id: 'node-13',
+      type: 'sink',
+      className: 'java.lang.ClassLoader',
+      methodName: 'defineClass',
+      label: 'TransletClassLoader.defineClass()',
+      description: '加载恶意字节码，触发静态代码块执行。',
+      codeSnippet: `Class defineClass(byte[] bytecode) {
+    return defineClass(null, bytecode, 0, bytecode.length);
+}`,
+      highlightLines: [2],
     },
   ],
   edges: [
@@ -124,26 +217,26 @@ export const commonsCollections3: GadgetChain = {
       source: 'node-2',
       target: 'node-3',
       invocationType: 'proxy',
-      label: '动态代理',
-      description: '反序列化后代理对象触发invoke',
+      label: '代理恢复',
+      description: '反序列化后代理对象可用，方法调用触发invoke',
       animated: true,
     },
     {
       id: 'edge-3',
       source: 'node-3',
       target: 'node-4',
-      invocationType: 'direct',
-      label: 'Map操作',
-      description: 'AnnotationInvocationHandler调用LazyMap.get',
-      animated: false,
+      invocationType: 'proxy',
+      label: '动态代理',
+      description: 'Map.entrySet()调用触发AnnotationInvocationHandler.invoke()',
+      animated: true,
     },
     {
       id: 'edge-4',
       source: 'node-4',
       target: 'node-5',
       invocationType: 'direct',
-      label: '工厂转换',
-      description: 'LazyMap通过ChainedTransformer创建value',
+      label: 'Map操作',
+      description: 'AnnotationInvocationHandler调用LazyMap.get',
       animated: false,
     },
     {
@@ -151,17 +244,71 @@ export const commonsCollections3: GadgetChain = {
       source: 'node-5',
       target: 'node-6',
       invocationType: 'direct',
-      label: '链式调用',
-      description: 'ChainedTransformer链调用InstantiateTransformer',
+      label: '工厂转换',
+      description: 'LazyMap通过ChainedTransformer创建value',
       animated: false,
     },
     {
       id: 'edge-6',
       source: 'node-6',
       target: 'node-7',
+      invocationType: 'direct',
+      label: '链式调用-1',
+      description: 'ChainedTransformer第一个transformer: ConstantTransformer',
+      animated: false,
+    },
+    {
+      id: 'edge-7',
+      source: 'node-7',
+      target: 'node-8',
+      invocationType: 'direct',
+      label: '链式调用-2',
+      description: 'ConstantTransformer返回TrAXFilter.class作为InstantiateTransformer输入',
+      animated: false,
+    },
+    {
+      id: 'edge-8',
+      source: 'node-8',
+      target: 'node-9',
       invocationType: 'reflection',
       label: '反射实例化',
-      description: 'InstantiateTransformer实例化恶意类并触发exec',
+      description: 'InstantiateTransformer反射实例化TrAXFilter',
+      animated: true,
+    },
+    {
+      id: 'edge-9',
+      source: 'node-9',
+      target: 'node-10',
+      invocationType: 'direct',
+      label: '构造器调用',
+      description: 'TrAXFilter构造器中调用templates.newTransformer()',
+      animated: false,
+    },
+    {
+      id: 'edge-10',
+      source: 'node-10',
+      target: 'node-11',
+      invocationType: 'direct',
+      label: '获取实例',
+      description: 'newTransformer()调用getTransletInstance()',
+      animated: false,
+    },
+    {
+      id: 'edge-11',
+      source: 'node-11',
+      target: 'node-12',
+      invocationType: 'direct',
+      label: '定义类',
+      description: 'getTransletInstance()调用defineTransletClasses()',
+      animated: false,
+    },
+    {
+      id: 'edge-12',
+      source: 'node-12',
+      target: 'node-13',
+      invocationType: 'direct',
+      label: '加载字节码',
+      description: 'defineTransletClasses()通过TransletClassLoader.defineClass()加载恶意字节码',
       animated: true,
     },
   ],
@@ -173,7 +320,7 @@ export const commonsCollections4: GadgetChain = {
     chainId: 'commons-collections4',
     name: 'CommonsCollections4',
     targetDependency: 'org.apache.commons:commons-collections4:4.0',
-    description: 'Commons Collections 4版本链，使用 InstantiateTransformer 和 PriorityQueue。类似CC2但使用InstantiateTransformer替代InvokerTransformer。',
+    description: 'Commons Collections 4版本链，使用 InstantiateTransformer + TrAXFilter + TemplatesImpl。通过 PriorityQueue 和 TransformingComparator 触发 InstantiateTransformer 实例化 TrAXFilter，进而触发 TemplatesImpl 恶意字节码加载。',
     author: 'frohoff',
     complexity: 'High',
     cve: 'CVE-2015-4852',
@@ -226,24 +373,86 @@ export const commonsCollections4: GadgetChain = {
       className: 'org.apache.commons.collections4.functors.InstantiateTransformer',
       methodName: 'transform',
       label: 'InstantiateTransformer.transform()',
-      description: '实例化指定类。',
+      description: '实例化TrAXFilter，传入恶意TemplatesImpl作为构造参数。',
       codeSnippet: `public O transform(final I input) {
-    Class cls = (Class) input;
+    Class cls = (Class) input; // TrAXFilter.class
+    // iParamTypes = { Templates.class }
+    // iArgs = { 恶意TemplatesImpl }
     return cls.getConstructor(iParamTypes).newInstance(iArgs);
+}`,
+      highlightLines: [3, 4, 5],
+    },
+    {
+      id: 'node-5',
+      type: 'gadget',
+      className: 'com.sun.org.apache.xalan.internal.xsltc.trax.TrAXFilter',
+      methodName: '<init>',
+      label: 'TrAXFilter Constructor',
+      description: 'TrAXFilter构造器中调用templates.newTransformer()。',
+      codeSnippet: `public TrAXFilter(Templates templates) {
+    this._templates = templates;
+    this._transformer = this._templates.newTransformer();
 }`,
       highlightLines: [3],
     },
     {
-      id: 'node-5',
-      type: 'sink',
-      className: 'java.lang.Runtime',
-      methodName: 'exec',
-      label: 'Runtime.exec()',
-      description: '最终命令执行点。',
-      codeSnippet: `public Process exec(String command) throws IOException {
-    return exec(command, null, null);
+      id: 'node-6',
+      type: 'gadget',
+      className: 'com.sun.org.apache.xalan.internal.xsltc.trax.TemplatesImpl',
+      methodName: 'newTransformer',
+      label: 'TemplatesImpl.newTransformer()',
+      description: '触发恶意字节码的加载和实例化。',
+      codeSnippet: `public synchronized Transformer newTransformer()
+    throws TransformerConfigurationException {
+    TransformerImpl transformer = new TransformerImpl(
+        getTransletInstance(), ...
+    );
+    return transformer;
 }`,
-      highlightLines: [1],
+      highlightLines: [3],
+    },
+    {
+      id: 'node-7',
+      type: 'gadget',
+      className: 'com.sun.org.apache.xalan.internal.xsltc.trax.TemplatesImpl',
+      methodName: 'getTransletInstance',
+      label: 'TemplatesImpl.getTransletInstance()',
+      description: '获取Translet实例，如果未加载则调用defineTransletClasses()。',
+      codeSnippet: `private Translet getTransletInstance() {
+    if (_class == null) {
+        defineTransletClasses();
+    }
+    // 实例化恶意类
+    return (Translet) _class[_transletIndex].newInstance();
+}`,
+      highlightLines: [3, 6],
+    },
+    {
+      id: 'node-8',
+      type: 'gadget',
+      className: 'com.sun.org.apache.xalan.internal.xsltc.trax.TemplatesImpl',
+      methodName: 'defineTransletClasses',
+      label: 'TemplatesImpl.defineTransletClasses()',
+      description: '定义Translet类，通过TransletClassLoader加载字节码。',
+      codeSnippet: `private void defineTransletClasses() {
+    // ... 创建TransletClassLoader ...
+    for (int i = 0; i < _bytecodes.length; i++) {
+        _class[i] = loader.defineClass(_bytecodes[i]);
+    }
+}`,
+      highlightLines: [4],
+    },
+    {
+      id: 'node-9',
+      type: 'sink',
+      className: 'java.lang.ClassLoader',
+      methodName: 'defineClass',
+      label: 'TransletClassLoader.defineClass()',
+      description: '加载恶意字节码，触发静态代码块执行。',
+      codeSnippet: `Class defineClass(byte[] bytecode) {
+    return defineClass(null, bytecode, 0, bytecode.length);
+}`,
+      highlightLines: [2],
     },
   ],
   edges: [
@@ -280,7 +489,43 @@ export const commonsCollections4: GadgetChain = {
       target: 'node-5',
       invocationType: 'reflection',
       label: '反射实例化',
-      description: 'InstantiateTransformer实例化恶意类',
+      description: 'InstantiateTransformer反射实例化TrAXFilter',
+      animated: true,
+    },
+    {
+      id: 'edge-5',
+      source: 'node-5',
+      target: 'node-6',
+      invocationType: 'direct',
+      label: '构造器调用',
+      description: 'TrAXFilter构造器中调用templates.newTransformer()',
+      animated: false,
+    },
+    {
+      id: 'edge-6',
+      source: 'node-6',
+      target: 'node-7',
+      invocationType: 'direct',
+      label: '获取实例',
+      description: 'newTransformer()调用getTransletInstance()',
+      animated: false,
+    },
+    {
+      id: 'edge-7',
+      source: 'node-7',
+      target: 'node-8',
+      invocationType: 'direct',
+      label: '定义类',
+      description: 'getTransletInstance()调用defineTransletClasses()',
+      animated: false,
+    },
+    {
+      id: 'edge-8',
+      source: 'node-8',
+      target: 'node-9',
+      invocationType: 'direct',
+      label: '加载字节码',
+      description: 'defineTransletClasses()通过TransletClassLoader.defineClass()加载恶意字节码',
       animated: true,
     },
   ],
@@ -292,7 +537,7 @@ export const commonsCollections5: GadgetChain = {
     chainId: 'commons-collections5',
     name: 'CommonsCollections5',
     targetDependency: 'commons-collections:commons-collections:3.1',
-    description: '利用 BadAttributeValueExpException 触发 toString()。通过 TiedMapEntry 触发 LazyMap.get()，不需要使用动态代理。',
+    description: '利用 BadAttributeValueExpException 触发 toString()。通过 TiedMapEntry 触发 LazyMap.get()，进而触发 InvokerTransformer 调用 Runtime.exec() 执行命令。不需要使用动态代理。',
     author: 'matthias_kaiser',
     complexity: 'Medium',
     cve: 'CVE-2015-4852',
@@ -367,6 +612,63 @@ export const commonsCollections5: GadgetChain = {
     },
     {
       id: 'node-6',
+      type: 'gadget',
+      className: 'org.apache.commons.collections.functors.ChainedTransformer',
+      methodName: 'transform',
+      label: 'ChainedTransformer.transform()',
+      description: '链式转换器，依次调用多个transformer。',
+      codeSnippet: `public Object transform(Object object) {
+    for (int i = 0; i < iTransformers.length; i++) {
+        object = iTransformers[i].transform(object);
+    }
+    return object;
+}`,
+      highlightLines: [2, 3],
+    },
+    {
+      id: 'node-7',
+      type: 'gadget',
+      className: 'org.apache.commons.collections.functors.ConstantTransformer',
+      methodName: 'transform',
+      label: 'ConstantTransformer.transform()',
+      description: '返回常量 Runtime.class。',
+      codeSnippet: `public Object transform(Object input) {
+    return iConstant; // Runtime.class
+}`,
+      highlightLines: [2],
+    },
+    {
+      id: 'node-8',
+      type: 'gadget',
+      className: 'org.apache.commons.collections.functors.InvokerTransformer',
+      methodName: 'transform',
+      label: 'InvokerTransformer.transform()',
+      description: '通过反射调用 Runtime.getRuntime() 方法。',
+      codeSnippet: `public Object transform(Object input) {
+    Class cls = input.getClass();
+    Method method = cls.getMethod(iMethodName, iParamTypes);
+    return method.invoke(input, iArgs);
+    // iMethodName="getRuntime", iArgs=[]
+}`,
+      highlightLines: [3],
+    },
+    {
+      id: 'node-9',
+      type: 'gadget',
+      className: 'org.apache.commons.collections.functors.InvokerTransformer',
+      methodName: 'transform',
+      label: 'InvokerTransformer.transform()',
+      description: '通过反射调用 Runtime.exec() 方法执行命令。',
+      codeSnippet: `public Object transform(Object input) {
+    Class cls = input.getClass();
+    Method method = cls.getMethod(iMethodName, iParamTypes);
+    return method.invoke(input, iArgs);
+    // iMethodName="exec", iArgs=["calc.exe"]
+}`,
+      highlightLines: [3],
+    },
+    {
+      id: 'node-10',
       type: 'sink',
       className: 'java.lang.Runtime',
       methodName: 'exec',
@@ -419,9 +721,45 @@ export const commonsCollections5: GadgetChain = {
       id: 'edge-5',
       source: 'node-5',
       target: 'node-6',
+      invocationType: 'direct',
+      label: '工厂转换',
+      description: 'LazyMap通过ChainedTransformer创建value',
+      animated: false,
+    },
+    {
+      id: 'edge-6',
+      source: 'node-6',
+      target: 'node-7',
+      invocationType: 'direct',
+      label: '链式调用-1',
+      description: 'ChainedTransformer第一个transformer: ConstantTransformer返回Runtime.class',
+      animated: false,
+    },
+    {
+      id: 'edge-7',
+      source: 'node-7',
+      target: 'node-8',
+      invocationType: 'direct',
+      label: '链式调用-2',
+      description: 'InvokerTransformer调用Runtime.getRuntime()',
+      animated: false,
+    },
+    {
+      id: 'edge-8',
+      source: 'node-8',
+      target: 'node-9',
+      invocationType: 'direct',
+      label: '链式调用-3',
+      description: 'InvokerTransformer调用Runtime.exec()',
+      animated: false,
+    },
+    {
+      id: 'edge-9',
+      source: 'node-9',
+      target: 'node-10',
       invocationType: 'reflection',
       label: '命令执行',
-      description: 'LazyMap.get触发ChainedTransformer执行exec',
+      description: '最终调用Runtime.exec()执行系统命令',
       animated: true,
     },
   ],
@@ -433,7 +771,7 @@ export const commonsCollections6: GadgetChain = {
     chainId: 'commons-collections6',
     name: 'CommonsCollections6',
     targetDependency: 'commons-collections:commons-collections:3.1',
-    description: '使用 HashMap 和 TiedMapEntry。通过 HashMap.put() 触发 TiedMapEntry.hashCode()，进而触发 LazyMap.get()。',
+    description: '使用 HashMap 和 TiedMapEntry。通过 HashMap.put() 触发 TiedMapEntry.hashCode()，进而触发 LazyMap.get()，最终通过 InvokerTransformer 调用 Runtime.exec() 执行命令。',
     author: 'matthias_kaiser',
     complexity: 'Medium',
     cve: 'CVE-2015-4852',
@@ -512,6 +850,63 @@ export const commonsCollections6: GadgetChain = {
     },
     {
       id: 'node-6',
+      type: 'gadget',
+      className: 'org.apache.commons.collections.functors.ChainedTransformer',
+      methodName: 'transform',
+      label: 'ChainedTransformer.transform()',
+      description: '链式转换器，依次调用多个transformer。',
+      codeSnippet: `public Object transform(Object object) {
+    for (int i = 0; i < iTransformers.length; i++) {
+        object = iTransformers[i].transform(object);
+    }
+    return object;
+}`,
+      highlightLines: [2, 3],
+    },
+    {
+      id: 'node-7',
+      type: 'gadget',
+      className: 'org.apache.commons.collections.functors.ConstantTransformer',
+      methodName: 'transform',
+      label: 'ConstantTransformer.transform()',
+      description: '返回常量 Runtime.class。',
+      codeSnippet: `public Object transform(Object input) {
+    return iConstant; // Runtime.class
+}`,
+      highlightLines: [2],
+    },
+    {
+      id: 'node-8',
+      type: 'gadget',
+      className: 'org.apache.commons.collections.functors.InvokerTransformer',
+      methodName: 'transform',
+      label: 'InvokerTransformer.transform()',
+      description: '通过反射调用 Runtime.getRuntime() 方法。',
+      codeSnippet: `public Object transform(Object input) {
+    Class cls = input.getClass();
+    Method method = cls.getMethod(iMethodName, iParamTypes);
+    return method.invoke(input, iArgs);
+    // iMethodName="getRuntime", iArgs=[]
+}`,
+      highlightLines: [3],
+    },
+    {
+      id: 'node-9',
+      type: 'gadget',
+      className: 'org.apache.commons.collections.functors.InvokerTransformer',
+      methodName: 'transform',
+      label: 'InvokerTransformer.transform()',
+      description: '通过反射调用 Runtime.exec() 方法执行命令。',
+      codeSnippet: `public Object transform(Object input) {
+    Class cls = input.getClass();
+    Method method = cls.getMethod(iMethodName, iParamTypes);
+    return method.invoke(input, iArgs);
+    // iMethodName="exec", iArgs=["calc.exe"]
+}`,
+      highlightLines: [3],
+    },
+    {
+      id: 'node-10',
       type: 'sink',
       className: 'java.lang.Runtime',
       methodName: 'exec',
@@ -564,9 +959,45 @@ export const commonsCollections6: GadgetChain = {
       id: 'edge-5',
       source: 'node-5',
       target: 'node-6',
+      invocationType: 'direct',
+      label: '工厂转换',
+      description: 'LazyMap通过ChainedTransformer创建value',
+      animated: false,
+    },
+    {
+      id: 'edge-6',
+      source: 'node-6',
+      target: 'node-7',
+      invocationType: 'direct',
+      label: '链式调用-1',
+      description: 'ChainedTransformer第一个transformer: ConstantTransformer返回Runtime.class',
+      animated: false,
+    },
+    {
+      id: 'edge-7',
+      source: 'node-7',
+      target: 'node-8',
+      invocationType: 'direct',
+      label: '链式调用-2',
+      description: 'InvokerTransformer调用Runtime.getRuntime()',
+      animated: false,
+    },
+    {
+      id: 'edge-8',
+      source: 'node-8',
+      target: 'node-9',
+      invocationType: 'direct',
+      label: '链式调用-3',
+      description: 'InvokerTransformer调用Runtime.exec()',
+      animated: false,
+    },
+    {
+      id: 'edge-9',
+      source: 'node-9',
+      target: 'node-10',
       invocationType: 'reflection',
       label: '命令执行',
-      description: 'LazyMap.get触发ChainedTransformer执行exec',
+      description: '最终调用Runtime.exec()执行系统命令',
       animated: true,
     },
   ],
@@ -578,7 +1009,7 @@ export const commonsCollections7: GadgetChain = {
     chainId: 'commons-collections7',
     name: 'CommonsCollections7',
     targetDependency: 'commons-collections:commons-collections:3.1',
-    description: '利用 Hashtable 和 AbstractMap。通过 Hashtable.reconstitutionPut() 触发 AbstractMap.equals()，进而触发 LazyMap.get()。',
+    description: '利用 Hashtable 和 AbstractMap。通过 Hashtable.reconstitutionPut() 触发 AbstractMap.equals()，进而触发 LazyMap.get()，最终通过 InvokerTransformer 调用 Runtime.exec() 执行命令。',
     author: 'matthias_kaiser',
     complexity: 'High',
     cve: 'CVE-2015-4852',
@@ -661,6 +1092,63 @@ export const commonsCollections7: GadgetChain = {
     },
     {
       id: 'node-6',
+      type: 'gadget',
+      className: 'org.apache.commons.collections.functors.ChainedTransformer',
+      methodName: 'transform',
+      label: 'ChainedTransformer.transform()',
+      description: '链式转换器，依次调用多个transformer。',
+      codeSnippet: `public Object transform(Object object) {
+    for (int i = 0; i < iTransformers.length; i++) {
+        object = iTransformers[i].transform(object);
+    }
+    return object;
+}`,
+      highlightLines: [2, 3],
+    },
+    {
+      id: 'node-7',
+      type: 'gadget',
+      className: 'org.apache.commons.collections.functors.ConstantTransformer',
+      methodName: 'transform',
+      label: 'ConstantTransformer.transform()',
+      description: '返回常量 Runtime.class。',
+      codeSnippet: `public Object transform(Object input) {
+    return iConstant; // Runtime.class
+}`,
+      highlightLines: [2],
+    },
+    {
+      id: 'node-8',
+      type: 'gadget',
+      className: 'org.apache.commons.collections.functors.InvokerTransformer',
+      methodName: 'transform',
+      label: 'InvokerTransformer.transform()',
+      description: '通过反射调用 Runtime.getRuntime() 方法。',
+      codeSnippet: `public Object transform(Object input) {
+    Class cls = input.getClass();
+    Method method = cls.getMethod(iMethodName, iParamTypes);
+    return method.invoke(input, iArgs);
+    // iMethodName="getRuntime", iArgs=[]
+}`,
+      highlightLines: [3],
+    },
+    {
+      id: 'node-9',
+      type: 'gadget',
+      className: 'org.apache.commons.collections.functors.InvokerTransformer',
+      methodName: 'transform',
+      label: 'InvokerTransformer.transform()',
+      description: '通过反射调用 Runtime.exec() 方法执行命令。',
+      codeSnippet: `public Object transform(Object input) {
+    Class cls = input.getClass();
+    Method method = cls.getMethod(iMethodName, iParamTypes);
+    return method.invoke(input, iArgs);
+    // iMethodName="exec", iArgs=["calc.exe"]
+}`,
+      highlightLines: [3],
+    },
+    {
+      id: 'node-10',
       type: 'sink',
       className: 'java.lang.Runtime',
       methodName: 'exec',
@@ -713,9 +1201,45 @@ export const commonsCollections7: GadgetChain = {
       id: 'edge-5',
       source: 'node-5',
       target: 'node-6',
+      invocationType: 'direct',
+      label: '工厂转换',
+      description: 'LazyMap通过ChainedTransformer创建value',
+      animated: false,
+    },
+    {
+      id: 'edge-6',
+      source: 'node-6',
+      target: 'node-7',
+      invocationType: 'direct',
+      label: '链式调用-1',
+      description: 'ChainedTransformer第一个transformer: ConstantTransformer返回Runtime.class',
+      animated: false,
+    },
+    {
+      id: 'edge-7',
+      source: 'node-7',
+      target: 'node-8',
+      invocationType: 'direct',
+      label: '链式调用-2',
+      description: 'InvokerTransformer调用Runtime.getRuntime()',
+      animated: false,
+    },
+    {
+      id: 'edge-8',
+      source: 'node-8',
+      target: 'node-9',
+      invocationType: 'direct',
+      label: '链式调用-3',
+      description: 'InvokerTransformer调用Runtime.exec()',
+      animated: false,
+    },
+    {
+      id: 'edge-9',
+      source: 'node-9',
+      target: 'node-10',
       invocationType: 'reflection',
       label: '命令执行',
-      description: 'LazyMap.get触发ChainedTransformer执行exec',
+      description: '最终调用Runtime.exec()执行系统命令',
       animated: true,
     },
   ],
