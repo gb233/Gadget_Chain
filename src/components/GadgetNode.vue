@@ -13,6 +13,10 @@ const props = defineProps<{
     isActive?: boolean
     isHighlighted?: boolean
     stepIndex?: number
+    // 对比模式属性
+    isCommon?: boolean
+    isOnlyA?: boolean
+    isOnlyB?: boolean
   }
 }>()
 
