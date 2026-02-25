@@ -29,12 +29,12 @@ export const spring1: GadgetChain = {
       className: 'org.springframework.transaction.jta.JtaTransactionManager',
       methodName: 'readObject',
       label: 'JtaTransactionManager.readObject()',
-      description: 'Spring JTA事务管理器反序列化。',
+      description: 'Spring JTA事务管理器反序列化，调用初始化方法。',
       codeSnippet: `private void readObject(ObjectInputStream ois) throws IOException, ClassNotFoundException {
     ois.defaultReadObject();
-    // ... 恢复事务管理器状态 ...
+    initUserTransactionAndTransactionManager();
 }`,
-      highlightLines: [1],
+      highlightLines: [3],
     },
     {
       id: 'node-3',
@@ -140,8 +140,8 @@ export const spring2: GadgetChain = {
   metadata: {
     chainId: 'spring2',
     name: 'Spring2',
-    targetDependency: 'org.springframework:spring-core:4.1.4.RELEASE',
-    description: '利用 Spring 的 AbstractBeanFactoryPointcutAdvisor 和 SerializableTypeWrapper，通过动态代理和反射触发任意方法调用。',
+    targetDependency: 'org.springframework:spring-core:4.1.4.RELEASE, org.springframework:spring-aop:4.1.4.RELEASE',
+    description: '利用 Spring 的 SerializableTypeWrapper.MethodInvokeTypeProvider 和 JdkDynamicAopProxy，通过动态代理触发 TemplatesImpl.newTransformer() 执行任意代码。',
     author: 'mbechler',
     complexity: 'High',
     cve: null,
@@ -162,74 +162,92 @@ export const spring2: GadgetChain = {
     {
       id: 'node-2',
       type: 'source',
-      className: 'org.springframework.beans.factory.config.AbstractBeanFactoryPointcutAdvisor',
+      className: 'org.springframework.core.SerializableTypeWrapper$MethodInvokeTypeProvider',
       methodName: 'readObject',
-      label: 'AbstractBeanFactoryPointcutAdvisor.readObject()',
-      description: 'Spring AOP 顾问反序列化。',
-      codeSnippet: `private void readObject(ObjectInputStream ois) throws IOException, ClassNotFoundException {
-    ois.defaultReadObject();
-    // ... 恢复AOP状态 ...
+      label: 'MethodInvokeTypeProvider.readObject()',
+      description: 'Spring 类型包装器反序列化，调用 getType() 获取类型并反射调用指定方法。',
+      codeSnippet: `private void readObject(ObjectInputStream inputStream) throws IOException, ClassNotFoundException {
+    inputStream.defaultReadObject();
+    Method method = ReflectionUtils.findMethod(this.provider.getType().getClass(), this.methodName);
+    this.result = ReflectionUtils.invokeMethod(method, this.provider.getType());
 }`,
-      highlightLines: [1],
+      highlightLines: [3, 4, 5],
     },
     {
       id: 'node-3',
       type: 'gadget',
-      className: 'org.springframework.core.SerializableTypeWrapper',
-      methodName: 'forTypeProvider',
-      label: 'SerializableTypeWrapper.forTypeProvider()',
-      description: '为 TypeProvider 创建代理。',
-      codeSnippet: `public static Type forTypeProvider(TypeProvider provider) {
-    // ... 创建动态代理 ...
-    return (Type) Proxy.newProxyInstance(...);
+      className: 'org.springframework.core.SerializableTypeWrapper$TypeProvider',
+      methodName: 'getType',
+      label: 'TypeProvider.getType()',
+      description: 'TypeProvider 代理对象调用 getType()。',
+      codeSnippet: `public interface TypeProvider extends Serializable {
+    Type getType();
+    default Object getSource() { return null; }
 }`,
-      highlightLines: [3],
+      highlightLines: [2],
     },
     {
       id: 'node-4',
       type: 'gadget',
-      className: '$Proxy',
-      methodName: 'getType',
-      label: 'Proxy.getType()',
-      description: '代理对象调用 getType 触发 TypeProvider。',
-      codeSnippet: `public Type getType() {
-    return handler.invoke(this, GET_TYPE_METHOD, null);
+      className: 'java.lang.reflect.Proxy',
+      methodName: 'invoke',
+      label: 'Proxy.invoke()',
+      description: '动态代理通过 AnnotationInvocationHandler 处理 getType 调用。',
+      codeSnippet: `public Object invoke(Object proxy, Method method, Object[] args) {
+    return handler.invoke(proxy, method, args);
 }`,
       highlightLines: [2],
     },
     {
       id: 'node-5',
       type: 'gadget',
-      className: 'org.springframework.beans.factory.ObjectFactory',
-      methodName: 'getObject',
-      label: 'ObjectFactory.getObject()',
-      description: 'Spring 工厂模式获取对象。',
-      codeSnippet: `T getObject() throws BeansException;`,
-      highlightLines: [1],
+      className: 'org.springframework.aop.framework.JdkDynamicAopProxy',
+      methodName: 'invoke',
+      label: 'JdkDynamicAopProxy.invoke()',
+      description: 'Spring AOP 代理调用，获取目标对象并执行方法。',
+      codeSnippet: `public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
+    TargetSource targetSource = this.advised.getTargetSource();
+    return AopUtils.invokeJoinpointUsingReflection(target, method, args);
+}`,
+      highlightLines: [2, 3],
     },
     {
       id: 'node-6',
       type: 'gadget',
-      className: 'org.springframework.beans.factory.config.AutowireUtils',
-      methodName: 'invokeMethod',
-      label: 'AutowireUtils.invokeMethod()',
-      description: '反射调用方法。',
-      codeSnippet: `public static Object invokeMethod(Method method, Object target, Object... args) {
+      className: 'org.springframework.aop.support.AopUtils',
+      methodName: 'invokeJoinpointUsingReflection',
+      label: 'AopUtils.invokeJoinpointUsingReflection()',
+      description: 'Spring AOP 工具类反射调用目标方法。',
+      codeSnippet: `public static Object invokeJoinpointUsingReflection(Object target, Method method, Object[] args) {
     return method.invoke(target, args);
 }`,
       highlightLines: [2],
     },
     {
       id: 'node-7',
-      type: 'sink',
-      className: 'java.lang.Runtime',
-      methodName: 'exec',
-      label: 'Runtime.exec()',
-      description: '最终命令执行点。',
-      codeSnippet: `public Process exec(String command) throws IOException {
-    return exec(command, null, null);
+      type: 'gadget',
+      className: 'com.sun.org.apache.xalan.internal.xsltc.trax.TemplatesImpl',
+      methodName: 'newTransformer',
+      label: 'TemplatesImpl.newTransformer()',
+      description: '触发模板加载，调用 getTransletInstance() 加载恶意字节码。',
+      codeSnippet: `public Transformer newTransformer() throws TransformerConfigurationException {
+    return new TransformerImpl(getTransletInstance(), ...);
 }`,
-      highlightLines: [1],
+      highlightLines: [2],
+    },
+    {
+      id: 'node-8',
+      type: 'sink',
+      className: 'com.sun.org.apache.xalan.internal.xsltc.trax.TemplatesImpl',
+      methodName: 'getTransletInstance',
+      label: 'TemplatesImpl.getTransletInstance()',
+      description: '最终触发点：加载恶意 Translet 类并实例化，执行静态代码块中的命令。',
+      codeSnippet: `private Translet getTransletInstance() throws TransformerConfigurationException {
+    if (_name == null) return null;
+    if (_class == null) defineTransletClasses();
+    return (Translet) _class[_transletIndex].newInstance();
+}`,
+      highlightLines: [3, 4],
     },
   ],
   edges: [
@@ -239,7 +257,7 @@ export const spring2: GadgetChain = {
       target: 'node-2',
       invocationType: 'direct',
       label: '反序列化触发',
-      description: 'ObjectInputStream反序列化AbstractBeanFactoryPointcutAdvisor',
+      description: 'ObjectInputStream反序列化MethodInvokeTypeProvider',
       animated: false,
     },
     {
@@ -247,8 +265,8 @@ export const spring2: GadgetChain = {
       source: 'node-2',
       target: 'node-3',
       invocationType: 'direct',
-      label: '类型包装',
-      description: '创建SerializableTypeWrapper代理',
+      label: '获取类型',
+      description: '调用TypeProvider.getType()',
       animated: false,
     },
     {
@@ -257,17 +275,17 @@ export const spring2: GadgetChain = {
       target: 'node-4',
       invocationType: 'proxy',
       label: '代理调用',
-      description: '代理对象调用getType',
+      description: 'TypeProvider代理调用',
       animated: true,
     },
     {
       id: 'edge-4',
       source: 'node-4',
       target: 'node-5',
-      invocationType: 'direct',
-      label: '工厂获取',
-      description: '调用ObjectFactory.getObject',
-      animated: false,
+      invocationType: 'proxy',
+      label: 'AOP代理',
+      description: 'JdkDynamicAopProxy处理newTransformer调用',
+      animated: true,
     },
     {
       id: 'edge-5',
@@ -275,16 +293,25 @@ export const spring2: GadgetChain = {
       target: 'node-6',
       invocationType: 'reflection',
       label: '反射调用',
-      description: 'AutowireUtils反射调用方法',
-      animated: true,
+      description: 'AopUtils反射调用方法',
+      animated: false,
     },
     {
       id: 'edge-6',
       source: 'node-6',
       target: 'node-7',
       invocationType: 'reflection',
-      label: '命令执行',
-      description: '反射调用Runtime.exec',
+      label: '模板转换',
+      description: '调用TemplatesImpl.newTransformer()',
+      animated: true,
+    },
+    {
+      id: 'edge-7',
+      source: 'node-7',
+      target: 'node-8',
+      invocationType: 'direct',
+      label: '类加载',
+      description: '加载恶意字节码并实例化',
       animated: true,
     },
   ],

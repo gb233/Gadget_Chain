@@ -5,7 +5,7 @@ export const myfaces1: GadgetChain = {
     chainId: 'myfaces1',
     name: 'Myfaces1',
     targetDependency: 'org.apache.myfaces.core:myfaces-impl:2.2.9',
-    description: '利用 Apache MyFaces JSF 框架的 StateUtils，通过反序列化触发 EL 表达式求值。',
+    description: '利用 Apache MyFaces JSF 框架的 SerializedView，通过反序列化触发 EL 表达式求值。',
     author: 'mbechler',
     complexity: 'Medium',
     cve: null,
@@ -25,25 +25,25 @@ export const myfaces1: GadgetChain = {
     },
     {
       id: 'node-2',
-      type: 'source',
-      className: 'org.apache.myfaces.shared.util.StateUtils',
-      methodName: 'getAsObject',
-      label: 'StateUtils.getAsObject()',
-      description: 'MyFaces反序列化状态对象。',
-      codeSnippet: `public static Object getAsObject(byte[] bytes) throws IOException {
-    ObjectInputStream ois = new ObjectInputStream(bais);
-    return ois.readObject();
+      type: 'gadget',
+      className: 'org.apache.myfaces.view.facelets.el.ValueExpressionMethodExpression',
+      methodName: 'readObject',
+      label: 'ValueExpressionMethodExpression.readObject()',
+      description: 'MyFaces EL表达式包装类，反序列化时恢复EL表达式。',
+      codeSnippet: `private void readObject(ObjectInputStream in) throws IOException, ClassNotFoundException {
+    in.defaultReadObject();
+    // 恢复ValueExpression状态
 }`,
-      highlightLines: [3],
+      highlightLines: [1],
     },
     {
       id: 'node-3',
       type: 'gadget',
-      className: 'javax.el.ELContext',
-      methodName: 'getELResolver',
-      label: 'ELContext.getELResolver()',
-      description: '获取EL解析器。',
-      codeSnippet: `public abstract ELResolver getELResolver();`,
+      className: 'javax.el.ValueExpression',
+      methodName: 'getValue',
+      label: 'ValueExpression.getValue()',
+      description: '获取EL表达式的值。',
+      codeSnippet: `public abstract Object getValue(ELContext context);`,
       highlightLines: [1],
     },
     {
@@ -76,7 +76,7 @@ export const myfaces1: GadgetChain = {
       target: 'node-2',
       invocationType: 'direct',
       label: '反序列化触发',
-      description: 'MyFaces反序列化状态',
+      description: 'ObjectInputStream反序列化ValueExpressionMethodExpression',
       animated: false,
     },
     {
@@ -84,8 +84,8 @@ export const myfaces1: GadgetChain = {
       source: 'node-2',
       target: 'node-3',
       invocationType: 'direct',
-      label: 'EL上下文',
-      description: '获取EL上下文',
+      label: 'EL求值',
+      description: '触发ValueExpression.getValue',
       animated: false,
     },
     {
@@ -94,7 +94,7 @@ export const myfaces1: GadgetChain = {
       target: 'node-4',
       invocationType: 'direct',
       label: 'EL解析',
-      description: '解析EL表达式',
+      description: '通过ELResolver解析表达式',
       animated: false,
     },
     {
@@ -114,7 +114,7 @@ export const myfaces2: GadgetChain = {
     chainId: 'myfaces2',
     name: 'Myfaces2',
     targetDependency: 'org.apache.myfaces.core:myfaces-impl:2.2.9',
-    description: '利用 MyFaces 的 ResourceUtils，通过反序列化触发资源加载和 EL 表达式执行。',
+    description: '利用 MyFaces 的 TagAttribute 和 MethodExpression，通过反序列化触发 EL 表达式执行。',
     author: 'mbechler',
     complexity: 'High',
     cve: null,
@@ -135,29 +135,37 @@ export const myfaces2: GadgetChain = {
     {
       id: 'node-2',
       type: 'gadget',
-      className: 'org.apache.myfaces.shared.renderkit.html.util.ResourceUtils',
-      methodName: 'getResourceURL',
-      label: 'ResourceUtils.getResourceURL()',
-      description: '获取资源URL。',
-      codeSnippet: `public static String getResourceURL(FacesContext context, String value) {
-    // ... 解析资源路径 ...
+      className: 'org.apache.myfaces.view.facelets.tag.TagAttribute',
+      methodName: 'getValueExpression',
+      label: 'TagAttribute.getValueExpression()',
+      description: '获取标签属性的ValueExpression。',
+      codeSnippet: `public ValueExpression getValueExpression(FaceletContext ctx, Class type) {
+    // 创建或获取ValueExpression
 }`,
       highlightLines: [1],
     },
     {
       id: 'node-3',
       type: 'gadget',
-      className: 'javax.faces.application.Application',
-      methodName: 'evaluateExpressionGet',
-      label: 'Application.evaluateExpressionGet()',
-      description: '求值EL表达式。',
-      codeSnippet: `public Object evaluateExpressionGet(FacesContext context, String expression, Class expectedType) {
-    // ... 求值表达式 ...
-}`,
+      className: 'javax.el.MethodExpression',
+      methodName: 'invoke',
+      label: 'MethodExpression.invoke()',
+      description: '调用EL方法表达式。',
+      codeSnippet: `public abstract Object invoke(ELContext context, Object[] params);`,
       highlightLines: [1],
     },
     {
       id: 'node-4',
+      type: 'gadget',
+      className: 'javax.el.ELResolver',
+      methodName: 'invoke',
+      label: 'ELResolver.invoke()',
+      description: '解析并调用EL表达式方法。',
+      codeSnippet: `public abstract Object invoke(ELContext context, Object base, Object method, Class<?>[] paramTypes, Object[] params);`,
+      highlightLines: [1],
+    },
+    {
+      id: 'node-5',
       type: 'sink',
       className: 'java.lang.Runtime',
       methodName: 'exec',
@@ -176,7 +184,7 @@ export const myfaces2: GadgetChain = {
       target: 'node-2',
       invocationType: 'direct',
       label: '反序列化触发',
-      description: '反序列化触发资源加载',
+      description: '反序列化触发TagAttribute处理',
       animated: false,
     },
     {
@@ -184,14 +192,23 @@ export const myfaces2: GadgetChain = {
       source: 'node-2',
       target: 'node-3',
       invocationType: 'direct',
-      label: 'EL求值',
-      description: '资源路径作为EL表达式求值',
+      label: '方法调用',
+      description: '触发MethodExpression.invoke',
       animated: false,
     },
     {
       id: 'edge-3',
       source: 'node-3',
       target: 'node-4',
+      invocationType: 'direct',
+      label: 'EL解析',
+      description: '通过ELResolver解析方法调用',
+      animated: false,
+    },
+    {
+      id: 'edge-4',
+      source: 'node-4',
+      target: 'node-5',
       invocationType: 'reflection',
       label: '命令执行',
       description: 'EL表达式执行命令',
