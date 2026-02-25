@@ -251,6 +251,20 @@ export const jrmpListener: GadgetChain = {
     {
       id: 'node-1',
       type: 'source',
+      className: 'java.io.ObjectInputStream',
+      methodName: 'readObject',
+      label: 'ObjectInputStream.readObject()',
+      description: 'Java反序列化标准入口。',
+      codeSnippet: `public final Object readObject()
+    throws IOException, ClassNotFoundException {
+    // ... 反序列化流程 ...
+    return obj;
+}`,
+      highlightLines: [1],
+    },
+    {
+      id: 'node-2',
+      type: 'source',
       className: 'sun.rmi.transport.tcp.TCPTransport',
       methodName: 'acceptConnection',
       label: 'TCPTransport.acceptConnection()',
@@ -262,7 +276,7 @@ export const jrmpListener: GadgetChain = {
       highlightLines: [3],
     },
     {
-      id: 'node-2',
+      id: 'node-3',
       type: 'gadget',
       className: 'sun.rmi.transport.tcp.TCPTransport',
       methodName: 'handleMessages',
@@ -274,7 +288,7 @@ export const jrmpListener: GadgetChain = {
       highlightLines: [1],
     },
     {
-      id: 'node-3',
+      id: 'node-4',
       type: 'gadget',
       className: 'sun.rmi.server.UnicastServerRef',
       methodName: 'dispatch',
@@ -286,7 +300,7 @@ export const jrmpListener: GadgetChain = {
       highlightLines: [1],
     },
     {
-      id: 'node-4',
+      id: 'node-5',
       type: 'sink',
       className: 'sun.rmi.server.UnicastServerRef',
       methodName: 'unmarshalCustomCallData',
@@ -305,8 +319,8 @@ export const jrmpListener: GadgetChain = {
       source: 'node-1',
       target: 'node-2',
       invocationType: 'direct',
-      label: '接受连接',
-      description: 'TCPTransport接受JRMP连接',
+      label: '反序列化触发',
+      description: 'ObjectInputStream反序列化触发JRMP连接处理',
       animated: false,
     },
     {
@@ -314,14 +328,23 @@ export const jrmpListener: GadgetChain = {
       source: 'node-2',
       target: 'node-3',
       invocationType: 'direct',
-      label: '消息分发',
-      description: 'handleMessages调用dispatch',
+      label: '接受连接',
+      description: 'TCPTransport接受JRMP连接',
       animated: false,
     },
     {
       id: 'edge-3',
       source: 'node-3',
       target: 'node-4',
+      invocationType: 'direct',
+      label: '消息分发',
+      description: 'handleMessages调用dispatch',
+      animated: false,
+    },
+    {
+      id: 'edge-4',
+      source: 'node-4',
+      target: 'node-5',
       invocationType: 'direct',
       label: '数据反序列化',
       description: 'dispatch触发unmarshalCustomCallData',
