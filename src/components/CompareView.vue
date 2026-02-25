@@ -62,14 +62,27 @@ const alignedGraph = computed(() => {
   const chainB = props.chainB
   if (!chainA || !chainB) return null
 
-  // 创建节点唯一标识
-  const getNodeKey = (n: GadgetNodeType) => `${n.className}#${n.methodName}`
+  // 创建节点唯一标识（使用index确保重复节点也能被区分）
+  const getNodeKey = (n: GadgetNodeType, index: number) => `${n.className}#${n.methodName}#${index}`
+  const getNodeBaseKey = (n: GadgetNodeType) => `${n.className}#${n.methodName}`
 
-  // 构建节点映射
-  const nodeIndexA = new Map(chainA.nodes.map((n, i) => [getNodeKey(n), i]))
-  const nodeIndexB = new Map(chainB.nodes.map((n, i) => [getNodeKey(n), i]))
+  // 构建节点映射（基于baseKey用于匹配）
+  const nodeIndexA = new Map<string, number[]>()
+  const nodeIndexB = new Map<string, number[]>()
 
-  // 找出所有唯一节点（按出现顺序）
+  chainA.nodes.forEach((n, i) => {
+    const baseKey = getNodeBaseKey(n)
+    if (!nodeIndexA.has(baseKey)) nodeIndexA.set(baseKey, [])
+    nodeIndexA.get(baseKey)!.push(i)
+  })
+
+  chainB.nodes.forEach((n, i) => {
+    const baseKey = getNodeBaseKey(n)
+    if (!nodeIndexB.has(baseKey)) nodeIndexB.set(baseKey, [])
+    nodeIndexB.get(baseKey)!.push(i)
+  })
+
+  // 找出所有节点（保留重复节点，正确匹配共用节点）
   const allNodes: Array<{
     key: string
     nodeA?: GadgetNodeType
@@ -79,38 +92,55 @@ const alignedGraph = computed(() => {
     isCommon: boolean
   }> = []
 
-  const addedKeys = new Set<string>()
+  const matchedA = new Set<number>()
+  const matchedB = new Set<number>()
 
-  // 先添加chainA的所有节点
-  chainA.nodes.forEach((node, index) => {
-    const key = getNodeKey(node)
-    if (!addedKeys.has(key)) {
-      const indexB = nodeIndexB.get(key) ?? -1
-      const nodeB = indexB >= 0 ? chainB.nodes[indexB] : undefined
+  // 第一步：匹配共用节点（按baseKey匹配，一对一）
+  chainA.nodes.forEach((nodeA, indexA) => {
+    const baseKey = getNodeBaseKey(nodeA)
+    const indicesB = nodeIndexB.get(baseKey) || []
+
+    // 找出未匹配的B节点
+    const unmatchedB = indicesB.find(idx => !matchedB.has(idx))
+
+    if (unmatchedB !== undefined) {
+      const nodeB = chainB.nodes[unmatchedB]
       allNodes.push({
-        key,
-        nodeA: node,
+        key: getNodeKey(nodeA, indexA),
+        nodeA,
         nodeB,
-        indexA: index,
-        indexB,
-        isCommon: !!nodeB
+        indexA,
+        indexB: unmatchedB,
+        isCommon: true
       })
-      addedKeys.add(key)
+      matchedA.add(indexA)
+      matchedB.add(unmatchedB)
     }
   })
 
-  // 再添加chainB独有的节点
-  chainB.nodes.forEach((node, index) => {
-    const key = getNodeKey(node)
-    if (!addedKeys.has(key)) {
+  // 第二步：添加仅A有的节点
+  chainA.nodes.forEach((node, index) => {
+    if (!matchedA.has(index)) {
       allNodes.push({
-        key,
+        key: getNodeKey(node, index),
+        nodeA: node,
+        indexA: index,
+        indexB: -1,
+        isCommon: false
+      })
+    }
+  })
+
+  // 第三步：添加仅B有的节点
+  chainB.nodes.forEach((node, index) => {
+    if (!matchedB.has(index)) {
+      allNodes.push({
+        key: getNodeKey(node, index),
         nodeB: node,
         indexA: -1,
         indexB: index,
         isCommon: false
       })
-      addedKeys.add(key)
     }
   })
 
